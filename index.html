@@ -1,0 +1,809 @@
+<!-- front end file for the chatbot
+    The chatbot is a simple chatbot that can provide information about nearby hospitals and clinics, as well as general medical advice.
+    The chatbot is built using HTML, CSS, and JavaScript, and communicates with a Python-based AI engine using a REST API.
+    The chatbot uses the Fetch API to send messages to the AI engine and display the responses in the chat window.
+    The chatbot also supports basic formatting for bold text and bullet points.
+    The chatbot can also handle requests for nearby hospitals and clinics by asking the user for their city and displaying a list of nearby hospitals and clinics.
+    The chatbot can also provide general medical advice by asking the user for -->
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AI Medical Assistant</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            body {
+                background-image: url('https://static.vecteezy.com/system/resources/previews/023/417/426/original/medical-infographic-banner-background-clinic-pharmacy-laboratory-test-and-research-healthcare-concept-backdrop-illustration-vector.jpg'); /* Replace with the actual path to your image */
+                background-size: cover; /* Scales the image to cover the entire background */
+                background-repeat: no-repeat; /* Prevents the image from repeating */
+                /* You might also want to add: */
+                /* background-position: center center; /* Centers the image */
+                /* background-attachment: fixed; /* Makes the background image fixed while scrolling */
+              }
+            .chat-container {
+                max-width: 600px;
+                margin: auto;
+                background: rgb(163, 220, 224);
+                border-radius: 10px;
+                overflow: hidden;
+                box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+            }
+            .chatbox {
+                height: 500px;
+                overflow-y: auto;
+                padding: 15px;
+                position: relative;
+            }
+            .user-message {
+                background-color: #23a0c3;
+                color: rgb(251, 248, 248);
+                padding: 10px;
+                border-radius: 10px;
+                margin: 5px 0;
+                max-width: 80%;
+                align-self: flex-end;
+            }
+            .bot-message {
+                background-color: #eeeff2;
+                padding: 10px;
+                border-radius: 10px;
+                margin: 5px 0;
+                max-width: 80%;
+                align-self: flex-start;
+            }
+            .placeholder {
+                display: block;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                color: #9ca3af;
+                text-align: center;
+            }
+        </style>
+    </head>
+    <body class="flex items-center justify-center min-h-screen">
+        <div class="chat-container">
+            <div class="bg-blue-600 text-white p-4 text-center text-lg font-semibold">
+                AI Medical Chatbot
+            </div>
+            <div id="chatbox" class="chatbox flex flex-col">
+                <!-- <div id="placeholder" class="placeholder">
+                    <p style="width: 300px;">Hi, I am an AI medical chatbot</p>
+                    <p>I can give medical related instructions like home remedies, precautions etc.</p>
+                    <p>I can help suggesting basic medication for general illness.</p>
+                    <p>I can help showing you hospitals near your location.</p>
+                </div> -->
+            </div>
+            <div class="p-3 border-t flex">
+                <input id="userInput" type="text" class="flex-1 border p-2 rounded-md" placeholder="Type your message...">
+                <button onclick="sendMessage()" class="ml-2 bg-blue-600 text-white px-4 py-2 rounded-md">Send</button>
+                <button onclick="resetChat()" class="ml-2 bg-red-600 text-white px-4 py-2 rounded-md">New Chat</button>
+            </div>
+            <div id="loading" class="text-center py-2 text-gray-500 hidden">Thinking...</div>
+        </div>
+    
+        <script>
+            const medicalTerms = {
+                symptoms: [
+                  "headache", "fever", "cough", "shortness of breath", "fatigue",
+                  "chest pain", "dizziness", "nausea", "vomiting", "diarrhea",
+                  "abdominal pain", "sore throat", "runny nose", "muscle pain"
+                ],
+                conditions: [
+                  "diabetes", "hypertension", "asthma", "covid-19", "flu",
+                  "cold", "arthritis", "cancer", "migraine", "pneumonia",
+                  "tuberculosis", "depression", "anxiety", "eczema", "insomnia"
+                ],
+                medications: [
+                  "paracetamol", "ibuprofen", "amoxicillin", "metformin",
+                  "insulin", "atorvastatin", "omeprazole", "aspirin",
+                  "azithromycin", "cetirizine"
+                ],
+                bodyParts: [
+                  "heart", "lungs", "kidneys", "liver", "stomach",
+                  "brain", "intestines", "skin", "eyes", "throat"
+                ],
+                diagnostics: [
+                  "blood test", "x-ray", "MRI", "CT scan", "ECG",
+                  "urine test", "biopsy", "ultrasound"
+                ],
+                firstAid: [
+                  "CPR", "burn treatment", "wound care", "choking first aid",
+                  "fracture support", "bleeding control"
+                ],
+                specialists: [
+                  "cardiologist", "neurologist", "dermatologist", "gynecologist",
+                  "pediatrician", "orthopedic", "psychiatrist", "oncologist"
+                ],
+                medicalProcedures: [
+                  "surgery", "chemotherapy", "radiation therapy", "dialysis",
+                  "vaccination", "endoscopy", "transplant", "physical therapy"
+                ],
+                lifestyle: [
+                  "diet for diabetes", "exercise for weight loss", "yoga for anxiety",
+                  "healthy sleep habits", "stress management"
+                ],
+                others: [
+                  "side effects", "allergy", "covid vaccine", "health insurance",
+                  "medical emergency", "nearest hospital", "home remedies"
+                ]
+            };              
+            // Initialize session ID
+            let sessionId = localStorage.getItem("sessionId") || "default";
+            if (sessionId === "default") {
+                sessionId = "session_" + new Date().getTime();
+                localStorage.setItem("sessionId", sessionId);
+            }
+    
+            function formatMessage(text) {
+                text = text.replace(/\*{2}(.+?)\*{2}/g, "<strong>$1</strong>"); // Bold text (**bold**)
+                text = text.replace(/\* (.+?)(\n|$)/g, "<li>$1</li>"); // Convert bullet points (* item) to <li>
+    
+                if (text.includes("<li>")) {
+                    text = "<ul class='list-disc pl-5'>" + text + "</ul>"; // Wrap bullet points in <ul>
+                }
+    
+                return text;
+            }
+    
+            function formatHospitals(hospitals) {
+                let formattedHospitals = "<ul class='list-disc pl-5'>";
+                hospitals.forEach(hospital => {
+                    if (hospital.includes(" -- ") && (hospital.toLowerCase().includes("hospital") || hospital.toLowerCase().includes("clinic") || hospital.toLowerCase().includes("hospitals")) && !hospital.toLowerCase().includes('animal') && !hospital.toLowerCase().includes('pet')) {
+                        const [hospitalName, googleMapsLink] = hospital.split(" -- ");
+                        formattedHospitals += `<li><a href="${googleMapsLink}" target="_blank" class="text-blue-600 underline">${hospitalName}</a></li>`;
+                    }
+                    // formattedHospitals += `<li><a href="${googleMapsLink}" target="_blank" class="text-blue-600 underline">${hospitalName}</a></li>`;
+                });
+                formattedHospitals += "</ul>";
+                return formattedHospitals;
+            }
+    
+            async function sendMessage() {
+                const inputField = document.getElementById("userInput");
+                const message = inputField.value.trim();
+                const chatbox = document.getElementById("chatbox");
+                const loadingIndicator = document.getElementById("loading");
+                const placeholder = document.getElementById("placeholder");
+
+                const allMedicalTerms = Object.values(medicalTerms).flat();
+
+                // Convert input to lowercase for case-insensitive comparison
+                const lowerCaseInput = message.toLowerCase();
+
+                // Check if none of the medical terms are in the user input
+                const hasMedicalTerm = allMedicalTerms.some(term => lowerCaseInput.includes(term.toLowerCase()));
+
+                //if (!hasMedicalTerm) {
+                //console.log("Ask anything related to medical info");
+               // }
+    
+                if (!message) return;
+    
+                chatbox.innerHTML += `<div class="self-end user-message">${message}</div>`;
+                inputField.value = "";
+                loadingIndicator.classList.remove("hidden");
+    
+                // Remove placeholder when a message is sent
+                if (placeholder) {
+                    placeholder.style.display = "none";
+                }
+    
+                // Check if the user is asking for nearby hospitals
+                if (message.toLowerCase().includes("hospital") || message.toLowerCase().includes("hospitals") || message.toLowerCase().includes("clinic") || message.toLowerCase().includes("clinics")) {
+                    chatbox.innerHTML += `
+                        <div class="self-start bot-message">
+                            <label for="locationInput">Please enter your city:</label>
+                            <input id="locationInput" type="text" class="border p-2 rounded-md" placeholder="Enter your city">
+                            <button onclick="sendLocation('${message}')" class="ml-2 bg-blue-600 text-white px-4 py-2 rounded-md">Submit</button>
+                        </div>`;
+                    loadingIndicator.classList.add("hidden");
+                } else if (message.toLowerCase().includes("medication") || message.toLowerCase().includes("dosage") || message.toLowerCase().includes("prescription") || message.toLowerCase().includes("tablets") || message.toLowerCase().includes("pills") || message.toLowerCase().includes("tablet")) {
+                    chatbox.innerHTML += `
+                        <div class="self-start bot-message">
+                            <label for="ageInput">Please enter your age:</label>
+                            <input id="ageInput" type="number" class="border p-2 rounded-md" placeholder="Enter your age">
+                            <label for="genderInput">Please enter your gender:</label>
+                            <input id="genderInput" type="text" class="border p-2 rounded-md" placeholder="Enter your gender">
+                            <button onclick="sendAgeGender('${message}')" class="ml-2 bg-blue-600 text-white px-4 py-2 rounded-md">Submit</button>
+                        </div>`;
+                    loadingIndicator.classList.add("hidden");
+                }else {
+                    sendRequest(message, null, null, null);
+                }
+            }
+    
+            async function sendLocation(message) {
+                const locationField = document.getElementById("locationInput");
+                const location = locationField.value.trim();
+                const chatbox = document.getElementById("chatbox");
+                const loadingIndicator = document.getElementById("loading");
+    
+                if (!location) return;
+    
+                chatbox.innerHTML += `<div class="self-end user-message">${location}</div>`;
+                locationField.parentElement.remove(); // Remove the location input field
+                loadingIndicator.classList.remove("hidden");
+    
+                sendRequest(message, location, null, null);
+            }
+    
+            async function sendAgeGender(message) {
+                const ageField = document.getElementById("ageInput");
+                const genderField = document.getElementById("genderInput");
+                const age = ageField.value.trim();
+                const gender = genderField.value.trim();
+                const chatbox = document.getElementById("chatbox");
+                const loadingIndicator = document.getElementById("loading");
+    
+                if (!age || !gender) return;
+    
+                chatbox.innerHTML += `<div class="self-end user-message">Age: ${age}, Gender: ${gender}</div>`;
+                ageField.parentElement.remove(); // Remove the age and gender input fields
+                loadingIndicator.classList.remove("hidden");
+                console.log("session id--",sessionId);
+                sendRequest(message, null, age, gender);
+            }
+    
+            async function sendRequest(message, location, age, gender) {
+                const chatbox = document.getElementById("chatbox");
+                const loadingIndicator = document.getElementById("loading");
+    
+                try {
+                    const response = await fetch("http://127.0.0.1:8000/chat", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ message, location, age, gender, session_id: sessionId })
+                    });
+    
+                    const data = await response.json();
+                    console.log("data--",data);
+                    let botMessage = data.response || "Sorry, I couldn't understand that.";
+    
+                    // Check if the response contains a list of hospitals
+                    if (botMessage.startsWith("Nearby hospitals are:")) {
+                        const hospitals = botMessage.replace("Nearby hospitals are:", "").split(", ");
+                        botMessage = formatHospitals(hospitals);
+                        console.log(hospitals);
+                    } else {
+                        botMessage = formatMessage(botMessage);
+                    }
+    
+                    chatbox.innerHTML += `<div class="self-start bot-message">${botMessage}</div>`;
+                } catch (error) {
+                    chatbox.innerHTML += `<div class="self-start bot-message bg-red-500 text-white">Error connecting to AI.</div>`;
+                } finally {
+                    loadingIndicator.classList.add("hidden");
+                }
+    
+                chatbox.scrollTop = chatbox.scrollHeight; // Auto-scroll to latest message
+            }
+    
+            async function resetChat() {
+                const chatbox = document.getElementById("chatbox");
+                chatbox.innerHTML = ""; // Clear the chatbox
+    
+                try {
+                    const response = await fetch("http://127.0.0.1:8000/reset", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ session_id: sessionId })
+                    });
+    
+                    const data = await response.json();
+                    if (data.response === "Session reset successfully.") {
+                        sessionId = "session_" + new Date().getTime();
+                        localStorage.setItem("sessionId", sessionId);
+                    }
+                } catch (error) {
+                    chatbox.innerHTML += `<div class="self-start bot-message bg-red-500 text-white">Error resetting session.</div>`;
+                }
+    
+                // Show placeholder again after resetting chat
+                const placeholder = document.getElementById("placeholder");
+                if (placeholder) {
+                    placeholder.style.display = "block";
+                }
+            }
+    
+            // Add event listener for Enter key to send message
+            document.getElementById("userInput").addEventListener("keypress", function(event) {
+                if (event.key === "Enter") {
+                    sendMessage();
+                }
+            });
+    
+            // Add event listener for Ctrl+N to start a new chat
+            document.addEventListener("keydown", function(event) {
+                if (event.ctrlKey && event.key.toLowerCase() === "n") {
+                    event.preventDefault();
+                    resetChat();
+                }
+            });
+        </script>
+    </body>
+    </html>
+    
+
+
+
+    <!-- <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AI Medical Chatbot</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            body {
+                background-color: #f4f4f4;
+            }
+            .chat-container {
+                max-width: 600px;
+                margin: auto;
+                background: white;
+                border-radius: 10px;
+                overflow: hidden;
+                box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+            }
+            .chatbox {
+                height: 500px;
+                overflow-y: auto;
+                padding: 15px;
+                position: relative;
+            }
+            .user-message {
+                background-color: #3b82f6;
+                color: white;
+                padding: 10px;
+                border-radius: 10px;
+                margin: 5px 0;
+                max-width: 80%;
+                align-self: flex-end;
+            }
+            .bot-message {
+                background-color: #e5e7eb;
+                padding: 10px;
+                border-radius: 10px;
+                margin: 5px 0;
+                max-width: 80%;
+                align-self: flex-start;
+            }
+            .placeholder {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                color: #9ca3af;
+                text-align: center;
+            }
+        </style>
+    </head>
+    <body class="flex items-center justify-center min-h-screen">
+        <div class="chat-container">
+            <div class="bg-blue-600 text-white p-4 text-center text-lg font-semibold">
+                AI Medical Chatbot
+            </div>
+            <div id="chatbox" class="chatbox flex flex-col">
+                <div id="placeholder" class="placeholder">
+                    <p style="width: 300px;">Hi, I am an AI medical chatbot</p>
+                    <p>I can give medical related instructions like home remedies, precautions etc.</p>
+                    <p>I can help suggesting basic medication for general illness.</p>
+                    <p>I can help showing you hospitals near your location.</p>
+                </div>
+            </div>
+            <div class="p-3 border-t flex">
+                <input id="userInput" type="text" class="flex-1 border p-2 rounded-md" placeholder="Type your message...">
+                <button onclick="sendMessage()" class="ml-2 bg-blue-600 text-white px-4 py-2 rounded-md">Send</button>
+                <button onclick="resetChat()" class="ml-2 bg-red-600 text-white px-4 py-2 rounded-md">New Chat</button>
+            </div>
+            <div id="loading" class="text-center py-2 text-gray-500 hidden">Thinking...</div>
+        </div>
+    
+        <script>
+            // Initialize session ID
+            let sessionId = localStorage.getItem("sessionId") || "default";
+            if (sessionId === "default") {
+                sessionId = "session_" + new Date().getTime();
+                localStorage.setItem("sessionId", sessionId);
+            }
+    
+            function formatMessage(text) {
+                text = text.replace(/\*{2}(.+?)\*{2}/g, "<strong>$1</strong>"); // Bold text (**bold**)
+                text = text.replace(/\* (.+?)(\n|$)/g, "<li>$1</li>"); // Convert bullet points (* item) to <li>
+    
+                if (text.includes("<li>")) {
+                    text = "<ul class='list-disc pl-5'>" + text + "</ul>"; // Wrap bullet points in <ul>
+                }
+    
+                return text;
+            }
+    
+            function formatHospitals(hospitals) {
+                let formattedHospitals = "<ul class='list-disc pl-5'>";
+                hospitals.forEach(hospital => {
+                    const [hospitalName, googleMapsLink] = hospital.split(" - ");
+                    formattedHospitals += `<li><a href="${googleMapsLink}" target="_blank" class="text-blue-600 underline">${hospitalName}</a></li>`;
+                });
+                formattedHospitals += "</ul>";
+                return formattedHospitals;
+            }
+    
+            async function sendMessage() {
+                const inputField = document.getElementById("userInput");
+                const message = inputField.value.trim();
+                const chatbox = document.getElementById("chatbox");
+                const loadingIndicator = document.getElementById("loading");
+                const placeholder = document.getElementById("placeholder");
+    
+                if (!message) return;
+    
+                chatbox.innerHTML += `<div class="self-end user-message">${message}</div>`;
+                inputField.value = "";
+                loadingIndicator.classList.remove("hidden");
+    
+                // Remove placeholder when a message is sent
+                if (placeholder) {
+                    placeholder.style.display = "none";
+                }
+    
+                // Check if the user is asking for nearby hospitals
+                if (message.toLowerCase().includes("hospital") || message.toLowerCase().includes("hospitals") || message.toLowerCase().includes("clinic") || message.toLowerCase().includes("clinics")) {
+                    chatbox.innerHTML += `
+                        <div class="self-start bot-message">
+                            <label for="locationInput">Please enter your city:</label>
+                            <input id="locationInput" type="text" class="border p-2 rounded-md" placeholder="Enter your city">
+                            <button onclick="sendLocation('${message}')" class="ml-2 bg-blue-600 text-white px-4 py-2 rounded-md">Submit</button>
+                        </div>`;
+                    loadingIndicator.classList.add("hidden");
+                } else if (message.toLowerCase().includes("medication") || message.toLowerCase().includes("dosage") || message.toLowerCase().includes("prescription") || message.toLowerCase().includes("tablets") || message.toLowerCase().includes("pills") || message.toLowerCase().includes("tablet")) {
+                    chatbox.innerHTML += `
+                        <div class="self-start bot-message">
+                            <label for="ageInput">Please enter your age:</label>
+                            <input id="ageInput" type="number" class="border p-2 rounded-md" placeholder="Enter your age">
+                            <label for="genderInput">Please enter your gender:</label>
+                            <input id="genderInput" type="text" class="border p-2 rounded-md" placeholder="Enter your gender">
+                            <button onclick="sendAgeGender('${message}')" class="ml-2 bg-blue-600 text-white px-4 py-2 rounded-md">Submit</button>
+                        </div>`;
+                    loadingIndicator.classList.add("hidden");
+                } else {
+                    sendRequest(message, null, null, null);
+                }
+            }
+    
+            async function sendLocation(message) {
+                const locationField = document.getElementById("locationInput");
+                const location = locationField.value.trim();
+                const chatbox = document.getElementById("chatbox");
+                const loadingIndicator = document.getElementById("loading");
+    
+                if (!location) return;
+    
+                chatbox.innerHTML += `<div class="self-end user-message">${location}</div>`;
+                locationField.parentElement.remove(); // Remove the location input field
+                loadingIndicator.classList.remove("hidden");
+    
+                sendRequest(message, location, null, null);
+            }
+    
+            async function sendAgeGender(message) {
+                const ageField = document.getElementById("ageInput");
+                const genderField = document.getElementById("genderInput");
+                const age = ageField.value.trim();
+                const gender = genderField.value.trim();
+                const chatbox = document.getElementById("chatbox");
+                const loadingIndicator = document.getElementById("loading");
+    
+                if (!age || !gender) return;
+    
+                chatbox.innerHTML += `<div class="self-end user-message">Age: ${age}, Gender: ${gender}</div>`;
+                ageField.parentElement.remove(); // Remove the age and gender input fields
+                loadingIndicator.classList.remove("hidden");
+    
+                sendRequest(message, null, age, gender);
+            }
+    
+            async function sendRequest(message, location, age, gender) {
+                const chatbox = document.getElementById("chatbox");
+                const loadingIndicator = document.getElementById("loading");
+    
+                try {
+                    const response = await fetch("http://127.0.0.1:8000/chat", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ message, location, age, gender, session_id: sessionId })
+                    });
+    
+                    const data = await response.json();
+                    let botMessage = data.response || "Sorry, I couldn't understand that.";
+    
+                    // Check if the response contains a list of hospitals
+                    if (botMessage.startsWith("Nearby hospitals are:")) {
+                        const hospitals = botMessage.replace("Nearby hospitals are:", "").split(", ");
+                        botMessage = formatHospitals(hospitals);
+                    } else {
+                        botMessage = formatMessage(botMessage);
+                    }
+    
+                    chatbox.innerHTML += `<div class="self-start bot-message">${botMessage}</div>`;
+                } catch (error) {
+                    chatbox.innerHTML += `<div class="self-start bot-message bg-red-500 text-white">Error connecting to AI.</div>`;
+                } finally {
+                    loadingIndicator.classList.add("hidden");
+                }
+    
+                chatbox.scrollTop = chatbox.scrollHeight; // Auto-scroll to latest message
+            }
+    
+            async function resetChat() {
+                const chatbox = document.getElementById("chatbox");
+                chatbox.innerHTML = ""; // Clear the chatbox
+    
+                try {
+                    const response = await fetch("http://127.0.0.1:8000/reset", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ session_id: sessionId })
+                    });
+    
+                    const data = await response.json();
+                    if (data.response === "Session reset successfully.") {
+                        sessionId = "session_" + new Date().getTime();
+                        localStorage.setItem("sessionId", sessionId);
+                    }
+                } catch (error) {
+                    chatbox.innerHTML += `<div class="self-start bot-message bg-red-500 text-white">Error resetting session.</div>`;
+                }
+    
+                // Show placeholder again after resetting chat
+                const placeholder = document.getElementById("placeholder");
+                if (placeholder) {
+                    placeholder.style.display = "block";
+                }
+            }
+    
+            // Add event listener for Enter key to send message
+            document.getElementById("userInput").addEventListener("keypress", function(event) {
+                if (event.key === "Enter") {
+                    sendMessage();
+                }
+            });
+    
+            // Add event listener for Ctrl+N to start a new chat
+            document.addEventListener("keydown", function(event) {
+                if (event.ctrlKey && event.key.toLowerCase() === "n") {
+                    event.preventDefault();
+                    resetChat();
+                }
+            });
+        </script>
+    </body>
+    </html> -->
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Medical Chatbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #f4f4f4;
+        }
+        .chat-container {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        .chatbox {
+            height: 500px;
+            overflow-y: auto;
+            padding: 15px;
+        }
+        .user-message {
+            background-color: #3b82f6;
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            margin: 5px 0;
+            max-width: 80%;
+            align-self: flex-end;
+        }
+        .bot-message {
+            background-color: #e5e7eb;
+            padding: 10px;
+            border-radius: 10px;
+            margin: 5px 0;
+            max-width: 80%;
+            align-self: flex-start;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+    <div class="chat-container">
+        <div class="bg-blue-600 text-white p-4 text-center text-lg font-semibold">
+            AI Medical Chatbot
+        </div>
+        <div id="chatbox" class="chatbox flex flex-col"></div>
+        <div class="p-3 border-t flex">
+            <input id="userInput" type="text" class="flex-1 border p-2 rounded-md" placeholder="Type your message...">
+            <button onclick="sendMessage()" class="ml-2 bg-blue-600 text-white px-4 py-2 rounded-md">Send</button>
+            <button onclick="resetChat()" class="ml-2 bg-red-600 text-white px-4 py-2 rounded-md">New Chat</button>
+        </div>
+        <div id="loading" class="text-center py-2 text-gray-500 hidden">Thinking...</div>
+    </div>
+
+    <script>
+        // Initialize session ID
+        let sessionId = localStorage.getItem("sessionId") || "default";
+        if (sessionId === "default") {
+            sessionId = "session_" + new Date().getTime();
+            localStorage.setItem("sessionId", sessionId);
+        }
+
+        function formatMessage(text) {
+            text = text.replace(/\*{2}(.+?)\*{2}/g, "<strong>$1</strong>"); // Bold text (**bold**)
+            text = text.replace(/\* (.+?)(\n|$)/g, "<li>$1</li>"); // Convert bullet points (* item) to <li>
+
+            if (text.includes("<li>")) {
+                text = "<ul class='list-disc pl-5'>" + text + "</ul>"; // Wrap bullet points in <ul>
+            }
+
+            return text;
+        }
+
+        function formatHospitals(hospitals) {
+            let formattedHospitals = "<ul class='list-disc pl-5'>";
+            hospitals.forEach(hospital => {
+                const [hospitalName, googleMapsLink] = hospital.split(" - ");
+                formattedHospitals += `<li><a href="${googleMapsLink}" target="_blank" class="text-blue-600 underline">${hospitalName}</a></li>`;
+            });
+            formattedHospitals += "</ul>";
+            return formattedHospitals;
+        }
+
+        async function sendMessage() {
+            const inputField = document.getElementById("userInput");
+            const message = inputField.value.trim();
+            const chatbox = document.getElementById("chatbox");
+            const loadingIndicator = document.getElementById("loading");
+
+            if (!message) return;
+
+            chatbox.innerHTML += `<div class="self-end user-message">${message}</div>`;
+            inputField.value = "";
+            loadingIndicator.classList.remove("hidden");
+
+            // Check if the user is asking for nearby hospitals
+            if (message.toLowerCase().includes("hospital") || message.toLowerCase().includes("hospitals") || message.toLowerCase().includes("clinic") || message.toLowerCase().includes("clinics")) {
+                chatbox.innerHTML += `
+                    <div class="self-start bot-message">
+                        <label for="locationInput">Please enter your city:</label>
+                        <input id="locationInput" type="text" class="border p-2 rounded-md" placeholder="Enter your city">
+                        <button onclick="sendLocation('${message}')" class="ml-2 bg-blue-600 text-white px-4 py-2 rounded-md">Submit</button>
+                    </div>`;
+                loadingIndicator.classList.add("hidden");
+            } else if (message.toLowerCase().includes("medication") || message.toLowerCase().includes("dosage") || message.toLowerCase().includes("prescription") || message.toLowerCase().includes("tablets") || message.toLowerCase().includes("pills") || message.toLowerCase().includes("tablet")) {
+                chatbox.innerHTML += `
+                    <div class="self-start bot-message">
+                        <label for="ageInput">Please enter your age:</label>
+                        <input id="ageInput" type="number" class="border p-2 rounded-md" placeholder="Enter your age">
+                        <label for="genderInput">Please enter your gender:</label>
+                        <input id="genderInput" type="text" class="border p-2 rounded-md" placeholder="Enter your gender">
+                        <button onclick="sendAgeGender('${message}')" class="ml-2 bg-blue-600 text-white px-4 py-2 rounded-md">Submit</button>
+                    </div>`;
+                loadingIndicator.classList.add("hidden");
+            } else {
+                sendRequest(message, null, null, null);
+            }
+        }
+
+        async function sendLocation(message) {
+            const locationField = document.getElementById("locationInput");
+            const location = locationField.value.trim();
+            const chatbox = document.getElementById("chatbox");
+            const loadingIndicator = document.getElementById("loading");
+
+            if (!location) return;
+
+            chatbox.innerHTML += `<div class="self-end user-message">${location}</div>`;
+            locationField.parentElement.remove(); // Remove the location input field
+            loadingIndicator.classList.remove("hidden");
+
+            sendRequest(message, location, null, null);
+        }
+
+        async function sendAgeGender(message) {
+            const ageField = document.getElementById("ageInput");
+            const genderField = document.getElementById("genderInput");
+            const age = ageField.value.trim();
+            const gender = genderField.value.trim();
+            const chatbox = document.getElementById("chatbox");
+            const loadingIndicator = document.getElementById("loading");
+
+            if (!age || !gender) return;
+
+            chatbox.innerHTML += `<div class="self-end user-message">Age: ${age}, Gender: ${gender}</div>`;
+            ageField.parentElement.remove(); // Remove the age and gender input fields
+            loadingIndicator.classList.remove("hidden");
+
+            sendRequest(message, null, age, gender);
+        }
+
+        async function sendRequest(message, location, age, gender) {
+            const chatbox = document.getElementById("chatbox");
+            const loadingIndicator = document.getElementById("loading");
+
+            try {
+                const response = await fetch("http://127.0.0.1:8000/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message, location, age, gender, session_id: sessionId })
+                });
+
+                const data = await response.json();
+                let botMessage = data.response || "Sorry, I couldn't understand that.";
+
+                // Check if the response contains a list of hospitals
+                if (botMessage.startsWith("Nearby hospitals are:")) {
+                    const hospitals = botMessage.replace("Nearby hospitals are:", "").split(", ");
+                    botMessage = formatHospitals(hospitals);
+                } else {
+                    botMessage = formatMessage(botMessage);
+                }
+
+                chatbox.innerHTML += `<div class="self-start bot-message">${botMessage}</div>`;
+            } catch (error) {
+                chatbox.innerHTML += `<div class="self-start bot-message bg-red-500 text-white">Error connecting to AI.</div>`;
+            } finally {
+                loadingIndicator.classList.add("hidden");
+            }
+
+            chatbox.scrollTop = chatbox.scrollHeight; // Auto-scroll to latest message
+        }
+
+        async function resetChat() {
+            const chatbox = document.getElementById("chatbox");
+            chatbox.innerHTML = ""; // Clear the chatbox
+
+            try {
+                const response = await fetch("http://127.0.0.1:8000/reset", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ session_id: sessionId })
+                });
+
+                const data = await response.json();
+                if (data.response === "Session reset successfully.") {
+                    sessionId = "session_" + new Date().getTime();
+                    localStorage.setItem("sessionId", sessionId);
+                }
+            } catch (error) {
+                chatbox.innerHTML += `<div class="self-start bot-message bg-red-500 text-white">Error resetting session.</div>`;
+            }
+        }
+
+        // Add event listener for Enter key to send message
+        document.getElementById("userInput").addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                sendMessage();
+            }
+        });
+
+        // Add event listener for Ctrl+N to start a new chat
+        document.addEventListener("keydown", function(event) {
+            if (event.ctrlKey && event.key === "n") {
+                event.preventDefault();
+                resetChat();
+            }
+        });
+    </script>
+</body>
+</html> -->
